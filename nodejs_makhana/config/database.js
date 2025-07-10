@@ -1,11 +1,11 @@
 const { Pool } = require('pg');
 
 const dbConfig = {
-    host: 'localhost',
-    port: 5432,
-    database: 'makhana_db',
-    user: 'postgres',
-    password: 'root'
+    host: 'pg-89b47ae-rhythmcoder966-2788.j.aivencloud.com',
+    port: 24699,
+    database: 'defaultdb',
+    user: 'avnadmin',
+    password: 'AVNS_oxamWh3FNHts46mCDOW'
 };
 
 const pool = new Pool(dbConfig);
