@@ -5,7 +5,10 @@ const dbConfig = {
     port: 24699,
     database: 'defaultdb',
     user: 'avnadmin',
-    password: 'AVNS_oxamWh3FNHts46mCDOW'
+    password: 'AVNS_oxamWh3FNHts46mCDOW',
+     ssl: {
+    rejectUnauthorized: false // For some cloud providers
+  }
 };
 
 const pool = new Pool(dbConfig);
