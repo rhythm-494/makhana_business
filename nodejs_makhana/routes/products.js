@@ -1,25 +1,12 @@
 const express = require('express');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const cloudinary = require('../config/cloudinary');
 const { pool } = require('../config/database');
 
 const router = express.Router();
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadDir = path.join(__dirname, '../uploads');
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueName = 'img_' + Date.now() + '_' + Math.round(Math.random() * 1E9) + path.extname(file.originalname);
-        cb(null, uniqueName);
-    }
-});
+// Configure multer for memory storage (not disk)
+const storage = multer.memoryStorage();
 
 const upload = multer({
     storage: storage,
@@ -30,15 +17,42 @@ const upload = multer({
         } else {
             cb(new Error('Invalid image type'), false);
         }
+    },
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
     }
 });
 
-// GET all products
+// Helper function to upload to Cloudinary
+const uploadToCloudinary = (buffer, originalname) => {
+    return new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                folder: 'makhana-products',
+                public_id: `product_${Date.now()}_${Math.round(Math.random() * 1E9)}`,
+                resource_type: 'image',
+                transformation: [
+                    { width: 800, height: 800, crop: 'limit' },
+                    { quality: 'auto' }
+                ]
+            },
+            (error, result) => {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(result);
+                }
+            }
+        );
+        uploadStream.end(buffer);
+    });
+};
+
+// GET all products (unchanged)
 router.get('/', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM products ORDER BY created_at DESC');
         
-        // Check if this is an admin request
         if (req.originalUrl.includes('admin')) {
             res.json({
                 status: 1,
@@ -57,7 +71,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-// POST new product
+// POST new product with Cloudinary upload
 router.post('/', upload.single('image'), async (req, res) => {
     try {
         const { name, description, price, stock_quantity, category = 'makhana', discount_price } = req.body;
@@ -69,13 +83,25 @@ router.post('/', upload.single('image'), async (req, res) => {
             });
         }
 
-        let imagePath = '';
+        let imageUrl = '';
+        let cloudinaryPublicId = '';
+
+        // Upload image to Cloudinary if provided
         if (req.file) {
-            imagePath = 'uploads/' + req.file.filename;
+            try {
+                const uploadResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+                imageUrl = uploadResult.secure_url;
+                cloudinaryPublicId = uploadResult.public_id;
+            } catch (uploadError) {
+                return res.status(500).json({
+                    status: 0,
+                    message: 'Image upload failed: ' + uploadError.message
+                });
+            }
         }
 
-        const columns = ['name', 'description', 'price', 'stock_quantity', 'category', 'image'];
-        const values = [name, description, price, stock_quantity, category, imagePath];
+        const columns = ['name', 'description', 'price', 'stock_quantity', 'category', 'image', 'cloudinary_public_id'];
+        const values = [name, description, price, stock_quantity, category, imageUrl, cloudinaryPublicId];
         
         if (discount_price !== undefined && discount_price !== '') {
             columns.push('discount_price');
@@ -91,7 +117,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             status: 1,
             message: 'Product added successfully',
             id: result.rows[0].id,
-            image: imagePath
+            image: imageUrl
         });
     } catch (error) {
         res.status(500).json({
@@ -101,7 +127,7 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 });
 
-// PUT update product
+// PUT update product with Cloudinary upload
 router.put('/', upload.single('image'), async (req, res) => {
     try {
         const { id, name, description, price, stock_quantity, category, discount_price } = req.body;
@@ -114,7 +140,7 @@ router.put('/', upload.single('image'), async (req, res) => {
         }
 
         // Check if product exists
-        const checkResult = await pool.query('SELECT id, image FROM products WHERE id = $1', [id]);
+        const checkResult = await pool.query('SELECT id, image, cloudinary_public_id FROM products WHERE id = $1', [id]);
         if (checkResult.rows.length === 0) {
             return res.status(404).json({
                 status: 0,
@@ -122,9 +148,26 @@ router.put('/', upload.single('image'), async (req, res) => {
             });
         }
 
-        let imagePath = checkResult.rows[0].image;
+        let imageUrl = checkResult.rows[0].image;
+        let cloudinaryPublicId = checkResult.rows[0].cloudinary_public_id;
+
+        // Upload new image to Cloudinary if provided
         if (req.file) {
-            imagePath = 'uploads/' + req.file.filename;
+            try {
+                // Delete old image from Cloudinary if it exists
+                if (cloudinaryPublicId) {
+                    await cloudinary.uploader.destroy(cloudinaryPublicId);
+                }
+
+                const uploadResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+                imageUrl = uploadResult.secure_url;
+                cloudinaryPublicId = uploadResult.public_id;
+            } catch (uploadError) {
+                return res.status(500).json({
+                    status: 0,
+                    message: 'Image upload failed: ' + uploadError.message
+                });
+            }
         }
 
         const updateFields = [];
@@ -151,9 +194,11 @@ router.put('/', upload.single('image'), async (req, res) => {
             updateFields.push(`category = $${paramCount++}`);
             params.push(category);
         }
-        if (imagePath) {
+        if (req.file) {
             updateFields.push(`image = $${paramCount++}`);
-            params.push(imagePath);
+            params.push(imageUrl);
+            updateFields.push(`cloudinary_public_id = $${paramCount++}`);
+            params.push(cloudinaryPublicId);
         }
         if (discount_price !== undefined && discount_price !== '') {
             updateFields.push(`discount_price = $${paramCount++}`);
@@ -184,7 +229,7 @@ router.put('/', upload.single('image'), async (req, res) => {
     }
 });
 
-// DELETE product
+// DELETE product with Cloudinary cleanup
 router.delete('/', async (req, res) => {
     try {
         const id = req.body.id || req.query.id;
@@ -196,12 +241,23 @@ router.delete('/', async (req, res) => {
             });
         }
 
-        const checkResult = await pool.query('SELECT id FROM products WHERE id = $1', [id]);
+        const checkResult = await pool.query('SELECT id, cloudinary_public_id FROM products WHERE id = $1', [id]);
         if (checkResult.rows.length === 0) {
             return res.status(404).json({
                 status: 0,
                 message: 'Product not found'
             });
+        }
+
+        // Delete image from Cloudinary if it exists
+        const cloudinaryPublicId = checkResult.rows[0].cloudinary_public_id;
+        if (cloudinaryPublicId) {
+            try {
+                await cloudinary.uploader.destroy(cloudinaryPublicId);
+            } catch (cloudinaryError) {
+                console.log('Cloudinary deletion error:', cloudinaryError);
+                // Continue with database deletion even if Cloudinary fails
+            }
         }
 
         await pool.query('DELETE FROM products WHERE id = $1', [id]);
@@ -218,7 +274,7 @@ router.delete('/', async (req, res) => {
     }
 });
 
-// POST find products by IDs
+// POST find products by IDs (unchanged)
 router.post('/find', async (req, res) => {
     try {
         const { productIds } = req.body;
