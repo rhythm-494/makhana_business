@@ -8,7 +8,7 @@ const app = express();
 
 // CORS configuration
 const allowedOrigins = [
-    'https://makhana-frontend.vercel.app/'
+    'https://makhana-frontend.vercel.app'
 ];
 
 const corsOptions = {
