@@ -168,6 +168,7 @@ router.post('/logout', (req, res) => {
 
 // GET check session
 router.get('/check_session', (req, res) => {
+    console.log('Session check - Session data:', req.session);
     if (req.session.logged_in) {
         res.json({
             status: 1,
