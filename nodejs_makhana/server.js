@@ -29,18 +29,28 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Session configuration
+// Session configuration with PostgreSQL store
 app.use(session({
-    
-    secret: 'your-secret-key-here-change-in-production',
+    store: new pgSession({
+        pool: pool, // Use your existing database pool
+        tableName: 'session', // Table name for sessions
+        createTableIfMissing: true // Automatically create session table
+    }),
+    secret: 'makhana-delight-session-secret-2025',
     resave: false,
     saveUninitialized: false,
+    name: 'makhana.sid',
     cookie: {
-        secure: false, // Set to true in production with HTTPS
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
+        secure: true, // Set to true for Render (HTTPS)
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        sameSite: 'none' // Required for cross-origin cookies
+    },
+    rolling: true // Refresh session on each request
 }));
 
+// Trust proxy for secure cookies on Render
+app.set('trust proxy', 1);
 // Serve static files
 app.use('/uploads', express.static('uploads'));
 
