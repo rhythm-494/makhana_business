@@ -168,39 +168,28 @@ router.post('/logout', (req, res) => {
 
 // GET check session
 router.get('/check_session', (req, res) => {
-    try {
-        if (req.session.logged_in &&
-            req.session.login_time &&
-            (Date.now() - req.session.login_time) < 86400000) { // 24 hours
-
-            req.session.login_time = Date.now();
-            res.json({
-                status: 1,
-                logged_in: true,
-                user: {
-                    id: req.session.user_id,
-                    username: req.session.username,
-                    email: req.session.email,
-                    full_name: req.session.full_name
-                }
-            });
-        } else {
-            req.session.destroy(() => {});
-            res.json({
-                status: 0,
-                logged_in: false,
-                message: 'Session expired'
-            });
-        }
-    } catch (error) {
-        console.error('Session check error:', error.message);
+    if (req.session.logged_in) {
+        res.json({
+            status: 1,
+            isAuthenticated: true,
+            user: req.session.user
+        });
+    } else if (req.session.admin_id) {
+        res.json({
+            status: 1,
+            isAuthenticated: true,
+            isAdmin: true,
+            admin: req.session.admin
+        });
+    } else {
         res.json({
             status: 0,
-            logged_in: false,
-            message: 'Session check failed'
+            isAuthenticated: false,
+            message: 'No active session'
         });
     }
 });
+
 
 // GET profile data
 router.get('/seeProfileData', async (req, res) => {
