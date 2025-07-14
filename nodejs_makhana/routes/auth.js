@@ -173,30 +173,38 @@ router.post('/logout', (req, res) => {
     }
 });
 
-// GET check session
+// FIXED check_session route:
 router.get('/check_session', (req, res) => {
     console.log('Session check - Session data:', req.session);
-    if (req.session.logged_in) {
+    console.log('Session ID:', req.sessionID);
+    
+    if (req.session.logged_in &&
+        req.session.login_time &&
+        (Date.now() - req.session.login_time) < 86400000) { // 24 hours
+        
+        // Refresh session time
+        req.session.login_time = Date.now();
+        
         res.json({
             status: 1,
-            isAuthenticated: true,
-            user: req.session.user
-        });
-    } else if (req.session.admin_id) {
-        res.json({
-            status: 1,
-            isAuthenticated: true,
-            isAdmin: true,
-            admin: req.session.admin
+            logged_in: true, // Match frontend expectation
+            user: {
+                // Access individual properties that actually exist
+                id: req.session.user_id,
+                username: req.session.username,
+                email: req.session.email,
+                full_name: req.session.full_name
+            }
         });
     } else {
         res.json({
             status: 0,
-            isAuthenticated: false,
-            message: 'No active session'
+            logged_in: false,
+            message: 'Session expired or not found'
         });
     }
 });
+
 
 
 // GET profile data
