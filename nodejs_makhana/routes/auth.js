@@ -190,10 +190,12 @@ router.post('/logout', (req, res) => {
 router.get('/check_session', (req, res) => {
     console.log('Session check - Session ID:', req.sessionID);
     console.log('Session check - Session data:', req.session);
-    
-    if (req.session.logged_in &&
-        req.session.login_time &&
-        (Date.now() - req.session.login_time) < 86400000) { // 24 hours
+    if(req.session.logged_in)
+    {
+        console.log("Hii this is login");
+        
+    }
+    if (req.session.logged_in){
         
         // Refresh session time
         req.session.login_time = Date.now();
