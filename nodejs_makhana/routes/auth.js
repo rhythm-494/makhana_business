@@ -60,7 +60,7 @@ router.post('/signup', async (req, res) => {
 
         const userId = result.rows[0].id;
 
-        // Set session
+        // Set session data
         req.session.user_id = userId;
         req.session.username = username;
         req.session.email = email;
@@ -68,16 +68,28 @@ router.post('/signup', async (req, res) => {
         req.session.logged_in = true;
         req.session.login_time = Date.now();
 
-        res.json({
-            status: 1,
-            message: 'Account created successfully!',
-            user: {
-                id: userId,
-                username: username,
-                email: email,
-                full_name: fullName
-            },
-            logged_in: true
+        console.log('Session data after signup:', req.session);
+
+        // Explicitly save session
+        req.session.save((err) => {
+            if (err) {
+                console.error('Session save error:', err);
+                return res.json({ status: 0, message: 'Session save failed' });
+            }
+
+            console.log('Session saved successfully with ID:', req.sessionID);
+            
+            res.json({
+                status: 1,
+                message: 'Account created successfully!',
+                user: {
+                    id: userId,
+                    username: username,
+                    email: email,
+                    full_name: fullName
+                },
+                logged_in: true
+            });
         });
     } catch (error) {
         console.error('Signup error:', error.message);
@@ -102,7 +114,7 @@ router.post('/login', async (req, res) => {
         const user = result.rows[0];
 
         if (user && await bcrypt.compare(password, user.password_hash)) {
-            // CRITICAL: Set session data here
+            // Set session data
             req.session.user_id = user.id;
             req.session.username = user.username;
             req.session.email = user.email;
@@ -110,7 +122,6 @@ router.post('/login', async (req, res) => {
             req.session.logged_in = true;
             req.session.login_time = Date.now();
 
-            // Add this log to verify session is set
             console.log('Session data after login:', req.session);
 
             // Explicitly save session
@@ -120,6 +131,8 @@ router.post('/login', async (req, res) => {
                     return res.json({ status: 0, message: 'Session save failed' });
                 }
 
+                console.log('Session saved successfully with ID:', req.sessionID);
+                
                 res.json({
                     status: 1,
                     message: 'Login successful!',
@@ -147,7 +160,6 @@ router.post('/login', async (req, res) => {
     }
 });
 
-
 // POST logout
 router.post('/logout', (req, res) => {
     try {
@@ -158,6 +170,7 @@ router.post('/logout', (req, res) => {
                     message: 'Logout failed'
                 });
             }
+            res.clearCookie('makhana.sid');
             res.json({
                 status: 1,
                 message: 'Logged out successfully',
@@ -173,10 +186,10 @@ router.post('/logout', (req, res) => {
     }
 });
 
-// FIXED check_session route:
+// GET check session - FIXED
 router.get('/check_session', (req, res) => {
+    console.log('Session check - Session ID:', req.sessionID);
     console.log('Session check - Session data:', req.session);
-    console.log('Session ID:', req.sessionID);
     
     if (req.session.logged_in &&
         req.session.login_time &&
@@ -187,25 +200,29 @@ router.get('/check_session', (req, res) => {
         
         res.json({
             status: 1,
-            logged_in: true, // Match frontend expectation
+            logged_in: true,
             user: {
-                // Access individual properties that actually exist
                 id: req.session.user_id,
                 username: req.session.username,
                 email: req.session.email,
                 full_name: req.session.full_name
             }
         });
+    } else if (req.session.admin_id) {
+        res.json({
+            status: 1,
+            logged_in: true,
+            isAdmin: true,
+            admin: req.session.admin
+        });
     } else {
         res.json({
             status: 0,
             logged_in: false,
-            message: 'Session expired or not found'
+            message: 'No active session'
         });
     }
 });
-
-
 
 // GET profile data
 router.get('/seeProfileData', async (req, res) => {
@@ -287,17 +304,25 @@ router.put('/update_profile', async (req, res) => {
         req.session.address = address;
         req.session.email = email;
 
-        res.json({
-            status: 1,
-            message: 'Profile updated successfully',
-            user: {
-                id: userId,
-                username: req.session.username,
-                email: email,
-                full_name: full_name,
-                phone: phone,
-                address: address
+        // Save updated session
+        req.session.save((err) => {
+            if (err) {
+                console.error('Session update error:', err);
+                return res.json({ status: 0, message: 'Session update failed' });
             }
+
+            res.json({
+                status: 1,
+                message: 'Profile updated successfully',
+                user: {
+                    id: userId,
+                    username: req.session.username,
+                    email: email,
+                    full_name: full_name,
+                    phone: phone,
+                    address: address
+                }
+            });
         });
     } catch (error) {
         console.error('Update profile error:', error.message);
