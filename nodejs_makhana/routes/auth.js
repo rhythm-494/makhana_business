@@ -92,13 +92,7 @@ router.post('/signup', async (req, res) => {
 router.post('/login', async (req, res) => {
     try {
         const { username, password } = req.body;
-
-        if (!username || !password) {
-            return res.json({
-                status: 0,
-                message: 'Username/Email and password are required'
-            });
-        }
+        console.log('Login attempt for:', username);
 
         const result = await pool.query(
             'SELECT * FROM users WHERE username = $1 OR email = $1',
@@ -108,6 +102,7 @@ router.post('/login', async (req, res) => {
         const user = result.rows[0];
 
         if (user && await bcrypt.compare(password, user.password_hash)) {
+            // CRITICAL: Set session data here
             req.session.user_id = user.id;
             req.session.username = user.username;
             req.session.email = user.email;
@@ -115,16 +110,27 @@ router.post('/login', async (req, res) => {
             req.session.logged_in = true;
             req.session.login_time = Date.now();
 
-            res.json({
-                status: 1,
-                message: 'Login successful!',
-                user: {
-                    id: user.id,
-                    username: user.username,
-                    email: user.email,
-                    full_name: user.full_name
-                },
-                logged_in: true
+            // Add this log to verify session is set
+            console.log('Session data after login:', req.session);
+
+            // Explicitly save session
+            req.session.save((err) => {
+                if (err) {
+                    console.error('Session save error:', err);
+                    return res.json({ status: 0, message: 'Session save failed' });
+                }
+
+                res.json({
+                    status: 1,
+                    message: 'Login successful!',
+                    user: {
+                        id: user.id,
+                        username: user.username,
+                        email: user.email,
+                        full_name: user.full_name
+                    },
+                    logged_in: true
+                });
             });
         } else {
             res.json({
@@ -133,13 +139,14 @@ router.post('/login', async (req, res) => {
             });
         }
     } catch (error) {
-        console.error('Login error:', error.message);
+        console.error('Login error:', error);
         res.json({
             status: 0,
             message: 'Database error occurred'
         });
     }
 });
+
 
 // POST logout
 router.post('/logout', (req, res) => {
